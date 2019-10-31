@@ -51,7 +51,9 @@ public class GalleryAdapter extends RecyclerView.Adapter<GalleryAdapter.GalleryI
         this.mContext = context.getApplicationContext();
         this.itemList = items;
         this.mImageCache = new ImageCache();
+        Log.d("anh.dt2", "mImageCache");
         this.mExecutor = mExecutor;
+        Log.d("anh.dt2", "mExecutor");
         this.itemSelectedList = itemSelectedList;
     }
 

@@ -7,12 +7,14 @@ import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import android.app.LoaderManager;
+import android.content.ContentResolver;
 import android.content.CursorLoader;
 import android.content.Loader;
 import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
 import android.provider.MediaStore;
 import android.util.Log;
 import android.util.LruCache;
@@ -29,8 +31,9 @@ public class MainActivity extends AppCompatActivity implements LoaderManager.Loa
 
     
     private static final int QUERY_ID = -1;
-    private static final int FIRST_PAGE_ITEM_NUMBER = 27;
-    private static final int ITEM_NUMBER_PER_PAGE = 21;
+    private static final int RESTART_QUERY_ID = -2;
+    private static final int FIRST_PAGE_ITEM_NUMBER = 30;
+    private static final int ITEM_NUMBER_PER_PAGE = 30;
     private static final int NUMBER_OF_CORES = Runtime.getRuntime().availableProcessors();
     private static final String MEDIA_URL_COLUMN = MediaStore.Files.FileColumns.DATA;
     private static final String MEDIA_ID_COLUMN = MediaStore.Files.FileColumns._ID;
@@ -41,6 +44,8 @@ public class MainActivity extends AppCompatActivity implements LoaderManager.Loa
     private List<Item> itemList;
     private List<Item> itemSelectedList;
     private PriorityThreadPoolExecutor executor;
+
+    private boolean shouldReloadGallery = false;
 
     private int currentPage = 0;
 
@@ -82,6 +87,7 @@ public class MainActivity extends AppCompatActivity implements LoaderManager.Loa
                 }
             }
         });
+        initContentObserver();
     }
 
 
@@ -101,7 +107,8 @@ public class MainActivity extends AppCompatActivity implements LoaderManager.Loa
                 + MEDIA_TYPE_COLUMN + "="
                 + MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO;
         Uri queryUri = MediaStore.Files.getContentUri("external");
-        if (id == QUERY_ID) {
+        if (id == QUERY_ID || id == RESTART_QUERY_ID) {
+            Log.d("anh.dt2", "Start query first page...");
             return new CursorLoader(this,
                     queryUri,
                     columns,
@@ -131,7 +138,7 @@ public class MainActivity extends AppCompatActivity implements LoaderManager.Loa
         String mediaPath;
         int type, id;
 
-        while (cursor.moveToNext()) {
+        while (cursor.moveToNext() && !shouldReloadGallery) {
             mediaPath = cursor.getString(column_index_data);
             type = cursor.getInt(column_index_type);
             id = cursor.getInt(column_index_id);
@@ -149,5 +156,78 @@ public class MainActivity extends AppCompatActivity implements LoaderManager.Loa
     @Override
     public void onLoaderReset(@NonNull Loader<Cursor> loader) {
 
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+
+
+        if (shouldReloadGallery) {
+            shouldReloadGallery = false;
+            stopAllTasks();
+            executor = new PriorityThreadPoolExecutor(1, 20, 60L, TimeUnit.SECONDS);
+            itemList.clear();
+            itemSelectedList.clear();
+            currentPage = 0;
+            galleryAdapter = new GalleryAdapter(this, itemList, itemSelectedList, executor);
+            galleryRecyclerView.setAdapter(galleryAdapter);
+            Log.d("anh.dt2", "Restart query first page...");
+            getLoaderManager().initLoader(QUERY_ID, null, this);
+        }
+    }
+
+    private void removeContentObserver() {
+        ContentResolver contentResolver = getContentResolver();
+        contentResolver.unregisterContentObserver(new MediaObserver(new Handler()));
+    }
+
+    private void initContentObserver() {
+
+        Uri externalImagesUri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
+        Uri externalVideosUri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI;
+
+        MediaObserver imageObserver = new MediaObserver(new Handler());
+        imageObserver.setMediaChangedListener(new MediaObserver.OnMediaChangedListener() {
+            @Override
+            public void onMediaChanged() {
+                Log.d("anh.dt2", "MainActivity onMediaChanged Image");
+                shouldReloadGallery = true;
+            }
+        });
+        MediaObserver videoObserver = new MediaObserver(new Handler());
+        videoObserver.setMediaChangedListener(new MediaObserver.OnMediaChangedListener() {
+            @Override
+            public void onMediaChanged() {
+                Log.d("anh.dt2", "MainActivity onMediaChanged Video");
+                shouldReloadGallery = true;
+            }
+        });
+        ContentResolver contentResolver = getContentResolver();
+
+        contentResolver.
+                registerContentObserver(
+                        externalImagesUri,
+                        false,
+                        imageObserver);
+
+        contentResolver.
+                registerContentObserver(
+                        externalVideosUri,
+                        false,
+                        videoObserver);
+    }
+
+    private void stopAllTasks() {
+        executor.shutdownNow();
+        for (int i = -1; i < currentPage; i++) {
+            getLoaderManager().destroyLoader(i);
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        removeContentObserver();
+        super.onDestroy();
     }
 }

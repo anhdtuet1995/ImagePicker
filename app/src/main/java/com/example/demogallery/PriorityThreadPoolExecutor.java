@@ -13,6 +13,7 @@ public class PriorityThreadPoolExecutor extends ThreadPoolExecutor {
     public PriorityThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime, TimeUnit unit) {
         super(corePoolSize, maximumPoolSize, keepAliveTime, unit, new PriorityBlockingQueue<Runnable>());
     }
+
     @Override
     public Future<?> submit(Runnable task) {
         PriorityFutureTask futureTask = new PriorityFutureTask((ThumbnailUpdateRunnable) task);
