@@ -23,10 +23,12 @@ import org.w3c.dom.Text;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 public class GalleryAdapter extends RecyclerView.Adapter<GalleryAdapter.GalleryItemHolder> {
 
@@ -92,7 +94,8 @@ public class GalleryAdapter extends RecyclerView.Adapter<GalleryAdapter.GalleryI
         if (item.isVideo()) {
             holder.playIcon.setVisibility(View.VISIBLE);
             holder.tvDuration.setVisibility(View.VISIBLE);
-            holder.tvDuration.setText(item.getDuration() + "");
+            long duration = item.getDuration();
+            holder.tvDuration.setText(calculateDuration(duration));
         }
         else {
             holder.playIcon.setVisibility(View.GONE);
@@ -113,6 +116,18 @@ public class GalleryAdapter extends RecyclerView.Adapter<GalleryAdapter.GalleryI
             mExecutor.submit(thumbnailUpdater);
         }
 
+    }
+
+    private String calculateDuration(long duration) {
+        int durationInSecond = (int) (duration / 1000);
+        int hours = durationInSecond / 3600;
+        int minutes = (durationInSecond / 60) - (hours * 60);
+        int seconds = durationInSecond - (hours * 3600) - (minutes * 60) ;
+        if (hours == 0) {
+            return String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds);
+        } else {
+            return String.format(Locale.getDefault(), "%d:%02d:%02d", hours, minutes, seconds);
+        }
     }
 
     private void updateItemChosen(@NonNull GalleryItemHolder holder, Item item) {
