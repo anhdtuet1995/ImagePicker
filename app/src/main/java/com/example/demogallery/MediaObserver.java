@@ -23,7 +23,7 @@ public class MediaObserver extends ContentObserver {
 
     @Override
     public void onChange(boolean selfChange, Uri uri) {
-        Log.d("anh.dt2", "onMediaChanged selfChange = " + selfChange);
+        Log.d("anh.dt2", "onMediaChanged selfChange = " + selfChange + " at uri = " + ((uri != null) ? uri.toString() : "null"));
         if (mListener != null) {
             mListener.onMediaChanged();
         }

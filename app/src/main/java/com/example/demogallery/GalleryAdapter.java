@@ -74,7 +74,6 @@ public class GalleryAdapter extends RecyclerView.Adapter<GalleryAdapter.GalleryI
     public void onBindViewHolder(@NonNull GalleryItemHolder holder, final int position) {
         final Item item = itemList.get(position);
         updateItemChosen(holder, item);
-
         holder.parentLayout.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -148,6 +147,11 @@ public class GalleryAdapter extends RecyclerView.Adapter<GalleryAdapter.GalleryI
                 notifyItemChanged(realPos);
             }
         }
+    }
+
+    @Override
+    public long getItemId(int position) {
+        return position;
     }
 
     @Override

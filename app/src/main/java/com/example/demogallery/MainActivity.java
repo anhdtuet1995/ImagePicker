@@ -27,7 +27,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
-public class MainActivity extends AppCompatActivity implements LoaderManager.LoaderCallbacks<Cursor> {
+public class MainActivity extends AppCompatActivity implements LoaderManager.LoaderCallbacks<Cursor>, UpdateMediaRunnable.OnMediaChangedListener {
 
     
     private static final int QUERY_ID = -1;
@@ -48,6 +48,9 @@ public class MainActivity extends AppCompatActivity implements LoaderManager.Loa
     private boolean shouldReloadGallery = false;
 
     private int currentPage = 0;
+
+    private Thread mMediaUpdater;
+    private int loadedItemsNumber = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -71,8 +74,8 @@ public class MainActivity extends AppCompatActivity implements LoaderManager.Loa
 
         galleryRecyclerView.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override
-            public void onScrollStateChanged(RecyclerView recyclerView, int newState) {
-                super.onScrollStateChanged(recyclerView, newState);
+            public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
+                super.onScrolled(recyclerView, dx, dy);
                 GridLayoutManager layoutManager = (GridLayoutManager) recyclerView.getLayoutManager();
                 int totalItemCount = 0;
                 int lastVisible = 0;
@@ -81,12 +84,13 @@ public class MainActivity extends AppCompatActivity implements LoaderManager.Loa
                     lastVisible = layoutManager.findLastVisibleItemPosition();
                 }
 
-                boolean endHasBeenReached = lastVisible + 5 >= totalItemCount;
+                boolean endHasBeenReached = lastVisible + 1 >= totalItemCount;
                 if (totalItemCount > 0 && endHasBeenReached) {
                     getLoaderManager().initLoader(currentPage, null, MainActivity.this);
                 }
             }
         });
+
         initContentObserver();
     }
 
@@ -117,13 +121,13 @@ public class MainActivity extends AppCompatActivity implements LoaderManager.Loa
                     MediaStore.Files.FileColumns.DATE_ADDED + " DESC LIMIT " + FIRST_PAGE_ITEM_NUMBER // Sort order.
             );
         } else if (id == currentPage) {
-            int loadedItems = FIRST_PAGE_ITEM_NUMBER + ITEM_NUMBER_PER_PAGE * currentPage;
+            Log.d("anh.dt2", "Start query page " + id + " with loadeditem = " + loadedItemsNumber + "...");
             return new CursorLoader(this,
                     queryUri,
                     columns,
                     selection,
                     null, // Selection args (none).
-                    MediaStore.Files.FileColumns.DATE_ADDED + " DESC LIMIT " + loadedItems + "," + ITEM_NUMBER_PER_PAGE // Sort order.
+                    MediaStore.Files.FileColumns.DATE_ADDED + " DESC LIMIT " + loadedItemsNumber + "," + ITEM_NUMBER_PER_PAGE // Sort order.
             );
         }
         return null;
@@ -131,6 +135,8 @@ public class MainActivity extends AppCompatActivity implements LoaderManager.Loa
 
     @Override
     public void onLoadFinished(@NonNull Loader<Cursor> loader, Cursor cursor) {
+        if (loader.getId() == QUERY_ID) loadedItemsNumber = FIRST_PAGE_ITEM_NUMBER;
+        else loadedItemsNumber += 30;
         currentPage++;
         int column_index_data = cursor.getColumnIndexOrThrow(MEDIA_URL_COLUMN);
         int column_index_id = cursor.getColumnIndexOrThrow(MEDIA_ID_COLUMN);
@@ -162,18 +168,14 @@ public class MainActivity extends AppCompatActivity implements LoaderManager.Loa
     protected void onResume() {
         super.onResume();
 
-
         if (shouldReloadGallery) {
             shouldReloadGallery = false;
             stopAllTasks();
-            executor = new PriorityThreadPoolExecutor(1, 20, 60L, TimeUnit.SECONDS);
-            itemList.clear();
-            itemSelectedList.clear();
             currentPage = 0;
-            galleryAdapter = new GalleryAdapter(this, itemList, itemSelectedList, executor);
-            galleryRecyclerView.setAdapter(galleryAdapter);
+            loadedItemsNumber = itemList.size();
+            mMediaUpdater = new Thread(new UpdateMediaRunnable(this, itemList, itemSelectedList, loadedItemsNumber, this));
+            mMediaUpdater.start();
             Log.d("anh.dt2", "Restart query first page...");
-            getLoaderManager().initLoader(QUERY_ID, null, this);
         }
     }
 
@@ -219,9 +221,12 @@ public class MainActivity extends AppCompatActivity implements LoaderManager.Loa
     }
 
     private void stopAllTasks() {
-        executor.shutdownNow();
-        for (int i = -1; i < currentPage; i++) {
+        for (int i = -1; i <= currentPage; i++) {
             getLoaderManager().destroyLoader(i);
+        }
+        executor.getQueue().clear();
+        if (mMediaUpdater != null && mMediaUpdater.isAlive()) {
+            mMediaUpdater.interrupt();
         }
     }
 
@@ -229,5 +234,10 @@ public class MainActivity extends AppCompatActivity implements LoaderManager.Loa
     protected void onDestroy() {
         removeContentObserver();
         super.onDestroy();
+    }
+
+    @Override
+    public void onMediaUpdated() {
+        galleryAdapter.notifyDataSetChanged();
     }
 }
