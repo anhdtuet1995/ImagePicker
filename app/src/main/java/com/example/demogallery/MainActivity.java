@@ -52,6 +52,9 @@ public class MainActivity extends AppCompatActivity implements LoaderManager.Loa
     private Thread mMediaUpdater;
     private int loadedItemsNumber = 0;
 
+    private MediaObserver mImageObserver;
+    private MediaObserver mVideoObserver;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -167,7 +170,6 @@ public class MainActivity extends AppCompatActivity implements LoaderManager.Loa
     @Override
     protected void onResume() {
         super.onResume();
-
         if (shouldReloadGallery) {
             shouldReloadGallery = false;
             stopAllTasks();
@@ -179,48 +181,58 @@ public class MainActivity extends AppCompatActivity implements LoaderManager.Loa
         }
     }
 
+    @Override
+    protected void onPause() {
+        super.onPause();
+        setMediaObserverListener();
+    }
+
     private void removeContentObserver() {
         ContentResolver contentResolver = getContentResolver();
-        contentResolver.unregisterContentObserver(new MediaObserver(new Handler()));
+        contentResolver.unregisterContentObserver(mVideoObserver);
+        contentResolver.unregisterContentObserver(mImageObserver);
     }
 
     private void initContentObserver() {
-
         Uri externalImagesUri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
         Uri externalVideosUri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI;
 
-        MediaObserver imageObserver = new MediaObserver(new Handler());
-        imageObserver.setMediaChangedListener(new MediaObserver.OnMediaChangedListener() {
+        mImageObserver = new MediaObserver(new Handler());
+        mVideoObserver = new MediaObserver(new Handler());
+        setMediaObserverListener();
+        ContentResolver contentResolver = getContentResolver();
+        contentResolver.
+                registerContentObserver(
+                        externalImagesUri,
+                        false,
+                        mImageObserver);
+        contentResolver.
+                registerContentObserver(
+                        externalVideosUri,
+                        false,
+                        mVideoObserver);
+    }
+
+    private void setMediaObserverListener() {
+        mImageObserver.setMediaChangedListener(new MediaObserver.OnMediaChangedListener() {
             @Override
             public void onMediaChanged() {
                 Log.d("anh.dt2", "MainActivity onMediaChanged Image");
                 shouldReloadGallery = true;
             }
         });
-        MediaObserver videoObserver = new MediaObserver(new Handler());
-        videoObserver.setMediaChangedListener(new MediaObserver.OnMediaChangedListener() {
+        mVideoObserver.setMediaChangedListener(new MediaObserver.OnMediaChangedListener() {
             @Override
             public void onMediaChanged() {
                 Log.d("anh.dt2", "MainActivity onMediaChanged Video");
                 shouldReloadGallery = true;
             }
         });
-        ContentResolver contentResolver = getContentResolver();
-
-        contentResolver.
-                registerContentObserver(
-                        externalImagesUri,
-                        false,
-                        imageObserver);
-
-        contentResolver.
-                registerContentObserver(
-                        externalVideosUri,
-                        false,
-                        videoObserver);
     }
 
     private void stopAllTasks() {
+        mImageObserver.setMediaChangedListener(null);
+        mVideoObserver.setMediaChangedListener(null);
         for (int i = -1; i <= currentPage; i++) {
             getLoaderManager().destroyLoader(i);
         }
