@@ -13,31 +13,27 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-public class UpdateMediaRunnable implements Runnable {
+public class LoadMediaRunnable implements Runnable {
 
     private static final String MEDIA_URL_COLUMN = MediaStore.Files.FileColumns.DATA;
     private static final String MEDIA_ID_COLUMN = MediaStore.Files.FileColumns._ID;
     private static final String MEDIA_TYPE_COLUMN = MediaStore.Files.FileColumns.MEDIA_TYPE;
 
     private Context mContext;
-    private int loadedItemNumber;
     private List<Item> itemList;
-    private List<Item> selectedItems;
-    private OnMediaChangedListener mListener;
-    private HashMap<String, Item> newMediaHashMap;
+    private OnMediaLoadedListener onMediaLoadedListener;
 
-    UpdateMediaRunnable(Context context, List<Item> items, List<Item> selectedItems, OnMediaChangedListener listener) {
+    public LoadMediaRunnable(Context context, List<Item> items) {
         this.mContext = context.getApplicationContext();
         this.itemList = items;
-        this.selectedItems = selectedItems;
-        this.loadedItemNumber = itemList.size();
-        this.mListener = listener;
-        this.newMediaHashMap = new LinkedHashMap<>();
+    }
+
+    public void setOnMediaLoadedListener(OnMediaLoadedListener listener) {
+        this.onMediaLoadedListener = listener;
     }
 
     @Override
     public void run() {
-        int newDataSize = loadedItemNumber;
         String[] columns = {MEDIA_ID_COLUMN,
                 MEDIA_URL_COLUMN,
                 MediaStore.Files.FileColumns.MEDIA_TYPE,
@@ -50,13 +46,12 @@ public class UpdateMediaRunnable implements Runnable {
                 + MEDIA_TYPE_COLUMN + "="
                 + MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO;
         Uri queryUri = MediaStore.Files.getContentUri("external");
-        Log.d("anh.dt2", "Restart query page with loaded items is " + loadedItemNumber + " ...");
         Cursor cursor = mContext.getContentResolver().query(
                 queryUri,
                 columns,
                 selection,
                 null, // Selection args (none).
-                MediaStore.Files.FileColumns.DATE_ADDED + " DESC LIMIT " + loadedItemNumber // Sort order.
+                MediaStore.Files.FileColumns.DATE_ADDED + " DESC" // Sort order.
         );
         if (cursor != null && cursor.getCount() >= 1) {
             int column_index_data = cursor.getColumnIndexOrThrow(MEDIA_URL_COLUMN);
@@ -74,51 +69,24 @@ public class UpdateMediaRunnable implements Runnable {
                 if (type == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO) {
                     item.setDuration(GalleryUtils.getDuration(mContext, item));
                 }
-                newMediaHashMap.put(mediaPath, item);
+                itemList.add(item);
+                if (itemList.size() < 30) {
+                    new Handler(Looper.getMainLooper()).post(new Runnable() {
+                        @Override
+                        public void run() {
+                            // Code here will run in UI thread
+                            if (onMediaLoadedListener != null) onMediaLoadedListener.onItemFirstPageLoaded(itemList.size() - 1);
+                        }
+                    });
+                }
             }
             cursor.close();
 
-            for (int i = 0; i < newDataSize; ) {
-                Item item = itemList.get(i);
-                if (!newMediaHashMap.containsKey(item.getPath())) {
-                    itemList.remove(item);
-                    selectedItems.remove(item);
-                    newDataSize--;
-                } else {
-                    //if no changes
-                    i++;
-                }
-            }
 
-            String firstPath = null;
-            if (itemList.size() > 0) {
-                firstPath = itemList.get(0).getPath();
-            }
-
-            if (!newMediaHashMap.isEmpty()) {
-                int index = 0;
-                for (Map.Entry<String, Item> entry : newMediaHashMap.entrySet()) {
-                    if (firstPath != null && !entry.getKey().equals(firstPath)) {
-                        Log.d("anh.dt2", "New item is added.... Path = " + entry.getKey());
-                        itemList.add(index++, entry.getValue());
-                    } else {
-                        break;
-                    }
-                }
-            }
-            newMediaHashMap.clear();
-            new Handler(Looper.getMainLooper()).post(new Runnable() {
-                @Override
-                public void run() {
-                    // Code here will run in UI thread
-                    if (mListener != null) mListener.onMediaUpdated();
-                }
-            });
         }
     }
 
-    public interface OnMediaChangedListener {
-        void onMediaUpdated();
+    public interface OnMediaLoadedListener {
+        void onItemFirstPageLoaded(int pos);
     }
-
 }

@@ -27,7 +27,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
-public class MainActivity extends AppCompatActivity implements LoaderManager.LoaderCallbacks<Cursor>, UpdateMediaRunnable.OnMediaChangedListener {
+public class MainActivity extends AppCompatActivity implements UpdateMediaRunnable.OnMediaChangedListener, LoadMediaRunnable.OnMediaLoadedListener {
 
     
     private static final int QUERY_ID = -1;
@@ -50,7 +50,7 @@ public class MainActivity extends AppCompatActivity implements LoaderManager.Loa
     private int currentPage = 0;
 
     private Thread mMediaUpdater;
-    private int loadedItemsNumber = 0;
+    private Thread mMediaLoader;
 
     private MediaObserver mImageObserver;
     private MediaObserver mVideoObserver;
@@ -70,101 +70,15 @@ public class MainActivity extends AppCompatActivity implements LoaderManager.Loa
         galleryRecyclerView = (RecyclerView) findViewById(R.id.gallery_list);
         galleryAdapter = new GalleryAdapter(this, itemList, itemSelectedList, executor);
 
-        getLoaderManager().initLoader(QUERY_ID, null, this);
+        LoadMediaRunnable runnable = new LoadMediaRunnable(this, itemList);
+        runnable.setOnMediaLoadedListener(this);
+        mMediaLoader = new Thread(runnable);
+        mMediaLoader.start();
 
         galleryRecyclerView.setLayoutManager(new GridLayoutManager(this, 3));
         galleryRecyclerView.setAdapter(galleryAdapter);
 
-        galleryRecyclerView.addOnScrollListener(new RecyclerView.OnScrollListener() {
-            @Override
-            public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
-                super.onScrolled(recyclerView, dx, dy);
-                GridLayoutManager layoutManager = (GridLayoutManager) recyclerView.getLayoutManager();
-                int totalItemCount = 0;
-                int lastVisible = 0;
-                if (layoutManager != null) {
-                    totalItemCount = layoutManager.getItemCount();
-                    lastVisible = layoutManager.findLastVisibleItemPosition();
-                }
-
-                boolean endHasBeenReached = lastVisible + 1 >= totalItemCount;
-                if (totalItemCount > 0 && endHasBeenReached) {
-                    getLoaderManager().initLoader(currentPage, null, MainActivity.this);
-                }
-            }
-        });
-
         initContentObserver();
-    }
-
-
-    @NonNull
-    @Override
-    public Loader<Cursor> onCreateLoader(int id, @Nullable Bundle args) {
-
-        String[] columns = {MEDIA_ID_COLUMN,
-                MEDIA_URL_COLUMN,
-                MediaStore.Files.FileColumns.MEDIA_TYPE,
-                MediaStore.Files.FileColumns.TITLE,
-                MediaStore.Files.FileColumns.DATE_ADDED,
-        };
-        String selection = MEDIA_TYPE_COLUMN + "="
-                + MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE
-                + " OR "
-                + MEDIA_TYPE_COLUMN + "="
-                + MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO;
-        Uri queryUri = MediaStore.Files.getContentUri("external");
-        if (id == QUERY_ID || id == RESTART_QUERY_ID) {
-            Log.d("anh.dt2", "Start query first page...");
-            return new CursorLoader(this,
-                    queryUri,
-                    columns,
-                    selection,
-                    null, // Selection args (none).
-                    MediaStore.Files.FileColumns.DATE_ADDED + " DESC LIMIT " + FIRST_PAGE_ITEM_NUMBER // Sort order.
-            );
-        } else if (id == currentPage) {
-            Log.d("anh.dt2", "Start query page " + id + " with loadeditem = " + loadedItemsNumber + "...");
-            return new CursorLoader(this,
-                    queryUri,
-                    columns,
-                    selection,
-                    null, // Selection args (none).
-                    MediaStore.Files.FileColumns.DATE_ADDED + " DESC LIMIT " + loadedItemsNumber + "," + ITEM_NUMBER_PER_PAGE // Sort order.
-            );
-        }
-        return null;
-    }
-
-    @Override
-    public void onLoadFinished(@NonNull Loader<Cursor> loader, Cursor cursor) {
-        if (loader.getId() == QUERY_ID) loadedItemsNumber = FIRST_PAGE_ITEM_NUMBER;
-        else loadedItemsNumber += 30;
-        currentPage++;
-        int column_index_data = cursor.getColumnIndexOrThrow(MEDIA_URL_COLUMN);
-        int column_index_id = cursor.getColumnIndexOrThrow(MEDIA_ID_COLUMN);
-        int column_index_type = cursor.getColumnIndex(MEDIA_TYPE_COLUMN);
-        String mediaPath;
-        int type, id;
-
-        while (cursor.moveToNext() && !shouldReloadGallery) {
-            mediaPath = cursor.getString(column_index_data);
-            type = cursor.getInt(column_index_type);
-            id = cursor.getInt(column_index_id);
-            Log.d("anh.dt2", mediaPath);
-            Item item = new Item(id, mediaPath, type != MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE);
-            if (type == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO) {
-                item.setDuration(GalleryUtils.getDuration(this, item));
-            }
-            itemList.add(item);
-            int currentPos = itemList.size() - 1;
-            galleryAdapter.notifyItemInserted(currentPos);
-        }
-    }
-
-    @Override
-    public void onLoaderReset(@NonNull Loader<Cursor> loader) {
-
     }
 
     @Override
@@ -174,8 +88,7 @@ public class MainActivity extends AppCompatActivity implements LoaderManager.Loa
             shouldReloadGallery = false;
             stopAllTasks();
             currentPage = 0;
-            loadedItemsNumber = itemList.size();
-            mMediaUpdater = new Thread(new UpdateMediaRunnable(this, itemList, itemSelectedList, loadedItemsNumber, this));
+            mMediaUpdater = new Thread(new UpdateMediaRunnable(this, itemList, itemSelectedList, this));
             mMediaUpdater.start();
             Log.d("anh.dt2", "Restart query first page...");
         }
@@ -251,5 +164,10 @@ public class MainActivity extends AppCompatActivity implements LoaderManager.Loa
     @Override
     public void onMediaUpdated() {
         galleryAdapter.notifyDataSetChanged();
+    }
+
+    @Override
+    public void onItemFirstPageLoaded(int pos) {
+        if (galleryAdapter != null) galleryAdapter.notifyItemInserted(pos);
     }
 }
